@@ -1,8 +1,9 @@
-from sqlalchemy import Column, Float, Integer, String, ForeignKey  # , DateTime, Table
+from sqlalchemy import Column, Float, Integer, String, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
 Base = declarative_base()
+
 
 class TractCode(Base):
     __tablename__ = 'tract_code'
@@ -12,6 +13,7 @@ class TractCode(Base):
     tracts = relationship('Tract', backref='tract_code')
     physicians = relationship('Physicians', backref='tract_code')
     two_stage = Column(Float)
+
 
 class Tract(Base):
     __tablename__ = 'tract'
@@ -30,6 +32,16 @@ class Tract(Base):
         while len(value) < 3:
             '0' + value
         return value
+
+    def return_pd_dict(self):
+        try:
+            return {
+                'tract_code': "{0}{1}{2}".format(self.state_fp, self.county_fp, self.tract_ce),
+                'lat_long_pop': (self.latitude_t, self.longitude_t, self.population),
+                'population': int(self.population)
+            }
+        except:
+            return False
 
 
 class Physicians(Base):
@@ -58,6 +70,16 @@ class Physicians(Base):
     ratio_30 = Column(Float)
     ratio_45 = Column(Float)
     ratio_60 = Column(Float)
+
+    def return_pd_dict(self):
+        try:
+            return {
+                'tract_code': self.tract_code.tract_code,
+                'lat_long': (self.latitude_p, self.longitude_p)
+            }
+        except:
+            return False
+
 
 class WithinMiles(Base):
     __tablename__ = 'within_miles'

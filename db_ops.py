@@ -3,19 +3,125 @@ from math import radians, cos, sin, asin, sqrt
 from models import Physicians, Tract, WithinMiles, TractCode
 
 import pandas as pd
+from datetime import datetime
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import create_engine
-from sqlalchemy.sql.expression import func
-from sqlalchemy.sql import label
+# from sqlalchemy.sql.expression import func
+# from sqlalchemy.sql import label
 import requests
 
 
-engine = create_engine("postgresql+psycopg2://dkalu:nigeria@localhost/docsdb")
+engine = create_engine("postgresql+psycopg2://dkalu:nigeria@104.236.248.186/docsdb")
 Session = sessionmaker(bind=engine)
 
 
 Session.configure(bind=engine)
 session = Session()
+
+
+def haversine_threshold(lon1, lat1, lon2, lat2, threshold, inc):
+    """
+    http://stackoverflow.com/questions/15736995/
+    Calculate the great circle distance between two points
+    on the earth (specified in decimal degrees)
+
+    Return 1 if within Threhsold; else return 0
+    """
+    lon1, lat1, lon2, lat2 = float(lon1), float(lat1), float(lon2), float(lat2)
+    # convert decimal degrees to radians
+    lon1, lat1, lon2, lat2 = map(radians, [lon1, lat1, lon2, lat2])
+    # haversine formula
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+    c = 2 * asin(sqrt(a))
+    distance_miles = 3956 * c
+    resp = inc if distance_miles <= threshold else 0
+    return int(resp)
+
+
+def do_calc():
+    start_time = datetime.utcnow()
+
+    def get_docs_within30(row):
+        base_lat, base_long = row['lat_long']
+
+        count = -1
+        for lat_long in docs_lat_long_list:
+            lat2, long2 = lat_long
+            count += haversine_threshold(
+                base_long, base_lat,
+                long2, lat2,
+                threshold=30, inc=1)
+        return count
+
+    def get_tracts_within30(row):
+        print '------starting----------'
+        # base_lat, base_long, _pop = row['lat_long_pop']
+        base_lat, base_long = row['lat_long']
+
+        # count = -int(_pop)
+        count = 0
+        for lat_long_pop in tracts_lat_long_pop_list:
+            lat2, long2, pop = lat_long_pop
+            append = haversine_threshold(
+                base_long, base_lat,
+                long2, lat2,
+                threshold=30, inc=pop)
+            # print "count={0} append={1}".format(count, append)
+            count += append
+            print count
+        return count
+
+    def ratio_30(row):
+        # pop_tract = tracts.loc[tracts['tract_code'] == row.tract_code].population.sum()
+        try:
+            # return float(row.within30) / int(pop_tract)
+            return float(row['docs_within30']) / float(row['tracts_within30'])
+        except ZeroDivisionError:
+            return 0
+
+    def sum_ratio30(row):
+        return docs.loc[docs['tract_code'] == row.tract_code].ratio30.sum()
+
+    print 'starting do calc'
+    tract_query = session.query(Tract).all()
+    docs_query = session.query(Physicians).all()
+    print 'query complete'
+
+    tracts = pd.DataFrame([tract.return_pd_dict()
+                          for tract in tract_query
+                          if tract.return_pd_dict()])
+
+    print 'tract df done'
+
+    docs = pd.DataFrame([doc.return_pd_dict()
+                        for doc in docs_query
+                        if doc.return_pd_dict()])
+    print 'docs df done'
+
+    docs_lat_long_list = docs['lat_long'].tolist()
+    tracts_lat_long_pop_list = tracts['lat_long_pop'].tolist()
+
+    print 'all docs within 30'
+    docs['docs_within30'] = docs.apply(get_docs_within30, axis=1)
+
+    print 'all tracts within 30'
+    docs['tracts_within30'] = docs.apply(get_tracts_within30, axis=1)
+
+    print 'calc ratios'
+    docs['ratio30'] = docs.apply(ratio_30, axis=1)
+
+    print 'calc sum or ratios'
+    tracts['sum_ratio'] = tracts.apply(sum_ratio30, axis=1)
+    tracts.to_csv('tractstracts')
+    docs.to_csv('docsdocsdocs')
+
+    end_time = datetime.utcnow()
+
+    total_seconds = (end_time - start_time).total_seconds()
+    print 'Complete...{0} seconds; {1} minutes'.format(total_seconds,
+                                                       total_seconds / 60)
 
 
 def haversine(lon1, lat1, lon2, lat2):
@@ -30,7 +136,7 @@ def haversine(lon1, lat1, lon2, lat2):
     # haversine formula
     dlon = lon2 - lon1
     dlat = lat2 - lat1
-    a = sin(dlat/2)**2 + cos(lat1) * cos(lat2) * sin(dlon/2)**2
+    a = sin(dlat / 2) ** 2 + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
     c = 2 * asin(sqrt(a))
     miles = 3956 * c
     return int(miles)
@@ -97,7 +203,11 @@ def populate_distance_table():
 
     count = 1
     for tract in tracts:
-        print 'Starting Tract: %s: %s of %s' % (str(tract.tract_ce), count, total_tracts)
+        print 'Starting Tract: %s: %s of %s' % (
+            str(tract.tract_ce),
+            count,
+            total_tracts
+        )
         state_fp = tract.state_fp
         county_fp = tract.county_fp
         tract_ce = tract.tract_ce
@@ -138,17 +248,17 @@ def populate_distance_table():
 def delete_all():
     print session.query(Tract).delete()
     print session.query(Physicians).delete()
-    #tracts = session.query(Tract).all()
-    #physicians = session.query(Physicians).all()
-    #miles = session.query(WithinMiles).all()
-    #print 'starting tracts'
-    #for tract in tracts:
+    # tracts = session.query(Tract).all()
+    # physicians = session.query(Physicians).all()
+    # miles = session.query(WithinMiles).all()
+    # print 'starting tracts'
+    # for tract in tracts:
     #    session.delete(tract)
-    #print 'starting physicians'
-    #for physician in physicians:
+    # print 'starting physicians'
+    # for physician in physicians:
     #    session.delete(physician)
-    #print 'starting miles'
-    #for mile in miles:
+    # print 'starting miles'
+    # for mile in miles:
     #    session.delete(mile)
     session.commit()
 
@@ -162,7 +272,8 @@ def _six_digits(value):
 
 def get_tract_code_id(tract_code):
     try:
-        atract_code = session.query(TractCode).filter_by(tract_code=tract_code).one()
+        atract_code = session.query(TractCode).filter_by(
+            tract_code=tract_code).one()
         return_obj = atract_code.id
     except:
         new = TractCode(tract_code=tract_code)
@@ -178,10 +289,11 @@ def populate_tract_code():
     tracts = session.query(Tract).all()
     for tract in tracts:
         print count
-        count += 1 
+        count += 1
         tract_code = tract.state_fp + tract.county_fp + tract.tract_ce
-        tract.tract_code_id = get_tract_code_id(tract_code)    
+        tract.tract_code_id = get_tract_code_id(tract_code)
     session.commit()
+
 
 def get_physician_tract_codes():
     count = 0
@@ -189,25 +301,28 @@ def get_physician_tract_codes():
         print count
         errors = []
         count += 1
-        url = "http://data.fcc.gov/api/block/find?format=json&latitude=%s&longitude=%s&showall=false" % (doc.latitude_p, doc.longitude_p)
+
+        url = ("http://data.fcc.gov/api/block/find?format=json&latitude={0}&longitude={1}&showall=false".format(doc.latitude_p, doc.longitude_p))
+
         r = requests.get(url)
         if r.status_code != 200:
             print 'NOOOOOOOOOOOOOOOOO'
-        
+
         try:
-            tract_code = r.json()['Block']['FIPS'][:-4] 
+            tract_code = r.json()['Block']['FIPS'][:-4]
             doc.tract_code_id = get_tract_code_id(tract_code)
         except:
             print r.json()
             errors.append(r.json())
 
     session.commit()
+    print 'errors are: '
     print errors
-    print 'all done with api call' 
+    print 'all done with api call'
 
 
 def calc_counts(threshold=30):
-    docs =  session.query(Physicians).all()
+    docs = session.query(Physicians).all()
     tracts = session.query(Tract).all()
     count = 0
 
@@ -216,14 +331,16 @@ def calc_counts(threshold=30):
         tract_count = 0
         lat = doc.latitude_p
         lon = doc.longitude_p
-        
+
         for adoc in docs:
-            if haversine(lon, lat, adoc.longitude_p, adoc.latitude_p) <= threshold:
+            if haversine(lon, lat, adoc.longitude_p,
+                         adoc.latitude_p) <= threshold:
                 doc_count += 1
         doc.docs_within = doc_count
 
         for tract in tracts:
-            if haversine(lon, lat, tract.longitude_t, tract.latitude_t) <= threshold:
+            if haversine(lon, lat, tract.longitude_t,
+                         tract.latitude_t) <= threshold:
                 tract_count += 1
         doc.tracts_within = tract_count
         session.commit()
@@ -233,7 +350,7 @@ def calc_counts(threshold=30):
 
 
 def calc_countss():
-    docs =  session.query(Physicians).all()
+    docs = session.query(Physicians).all()
     tracts = session.query(Tract).all()
     count = 0
 
@@ -285,21 +402,22 @@ def calc_countss():
         doc.tracts_within_10 = tract_count_10
         doc.tracts_within_15 = tract_count_15
         doc.tracts_within_45 = tract_count_45
-	doc.tracts_within_60 = tract_count_60
+        doc.tracts_within_60 = tract_count_60
 
         session.commit()
         print count
         count += 1
     print 'done with calc counts'
 
+
 def calc_ratio(distance):
     attr_map = {
-	10: ['docs_within_10', 'tracts_within_10', 'ratio_10'],
-	15: ['docs_within_15', 'tracts_within_15', 'ratio_15'],
+        10: ['docs_within_10', 'tracts_within_10', 'ratio_10'],
+        15: ['docs_within_15', 'tracts_within_15', 'ratio_15'],
         30: ['docs_within', 'tracts_within', 'ratio_30'],
-	45: ['docs_within_45', 'tracts_within_45', 'ratio_45'],
-	60: ['docs_within_60', 'tracts_within_60', 'ratio_60']
-	}
+        45: ['docs_within_45', 'tracts_within_45', 'ratio_45'],
+        60: ['docs_within_60', 'tracts_within_60', 'ratio_60']
+    }
 
     docs = session.query(Physicians).all()
 
@@ -307,52 +425,42 @@ def calc_ratio(distance):
     count = 0
     for doc in docs:
         sum_physicians = getattr(doc, calc[0])
-        #sum_pop = session.query(func.sum(WithinMiles.population)).filter(WithinMiles.miles<=distance, WithinMiles.object_id==doc.object_id)
-        #sum_pop = session.query(WithinMiles, label('sum', func.sum(WithinMiles.population)), label('count', func.count(WithinMiles.id))).filter(WithinMiles.miles<=distance, WithinMiles.object_id==doc.object_id).all()
-        #sum_pop = session.query(func.sum(WithinMiles.population).label('sum_pop')).filter(WithinMiles.miles<=distance, WithinMiles.object_id==doc.object_id)
-        all = session.query(WithinMiles).filter(WithinMiles.miles<=distance, WithinMiles.object_id==doc.object_id)
+        all = session.query(WithinMiles).filter(
+            WithinMiles.miles <= distance,
+            WithinMiles.object_id == doc.object_id
+        )
+
         sum_pop = sum(int(a.population) for a in all)
-        
         if sum_pop > 0:
             ratio = float(sum_physicians) / float(sum_pop)
         else:
             ratio = 0
         setattr(doc, calc[2], ratio)
-	print "count(%s): %s    ratio: %s" % (distance, count, ratio)
+        print "count(%s): %s    ratio: %s" % (distance, count, ratio)
         count += 1
     session.commit()
 
-
-        #print dir(sum_pop)
-        #print sum_pop.execute()
-        #return
-        #ratio = sum_physicians / sum_pop
-        #setattr(doc, calc[2], ratio)
-        #print sum_physicians, sum_pop, ratio
-        #count = session.query(WithinMiles).filter(WithinMiles.miles<=distance, WithinMiles.object_id==doc.object_id).count()
-        #print '------'
-        #print count, getattr(doc, calc[1])
-        #return
 
 # [48.0, 1.0, 950401.0, 5422.0, 31.755614, -95.823901]
 # [14178, -95.444343, 30.129775, 'SPRING', 'TX', 77380]
 # 28.710983 -99.829416
 # 31.99936,-95.53183
 if __name__ == '__main__':
-    #delete_all()
-    #print haversine('-99.829416', '28.710983', '-95.53183', '31.99936')
-    #unpack_centroids()
-    #unpack_physicians()
-    #populate_distance_table()
-    #a = session.query(Tract).limit(0).first()
-    #print a.tract_code_id
-    #populate_tract_code()
-    #get_physician_tract_codes()
-    #calc_countss()
-    calc_ratio(30)
-    calc_ratio(15)
-    calc_ratio(10)
-    calc_ratio(45)
-    calc_ratio(60)
-    #print session.query(Physicians).all()[0].docs_within
-    #print session.query(Physicians).all()[0].tracts_within
+    # delete_all()
+    # print haversine('-99.829416', '28.710983', '-95.53183', '31.99936')
+    # unpack_centroids()
+    # unpack_physicians()
+    # populate_distance_table()
+    # a = session.query(Tract).limit(0).first()
+    # print a.tract_code_id
+    # populate_tract_code()
+    # get_physician_tract_codes()
+    do_calc()
+    # calc_countss()
+    # calc_ratio(30)
+    # calc_ratio(15)
+    # calc_ratio(10)
+    # calc_ratio(45)
+    # calc_ratio(60)
+    # print session.query(Physicians).all()[0].docs_within
+    # print session.query(Physicians).all()[0].tracts_within
