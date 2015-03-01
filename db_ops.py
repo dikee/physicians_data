@@ -10,9 +10,9 @@ from sqlalchemy import create_engine
 # from sqlalchemy.sql import label
 import requests
 
+import config
 
-engine = create_engine("postgresql+psycopg2://"
-                       "dkalu:nigeria@104.236.248.186/docsdb")
+engine = create_engine(config.DB_STRING)
 
 Session = sessionmaker(bind=engine)
 
@@ -45,7 +45,7 @@ def haversine_threshold(lon1, lat1, lon2, lat2, threshold, inc):
 def do_calc():
     start_time = datetime.utcnow()
 
-    def get_docs_within30(row):
+    def get_docs_within10(row):
         base_lat, base_long = row['lat_long']
 
         count = -1
@@ -54,11 +54,10 @@ def do_calc():
             count += haversine_threshold(
                 base_long, base_lat,
                 long2, lat2,
-                threshold=30, inc=1)
+                threshold=10, inc=1)
         return count
 
-    def get_tracts_within30(row):
-        print '------starting----------'
+    def get_tracts_within10(row):
         base_lat, base_long = row['lat_long']
 
         count = 0
@@ -67,20 +66,19 @@ def do_calc():
             append = haversine_threshold(
                 base_long, base_lat,
                 long2, lat2,
-                threshold=30, inc=pop)
+                threshold=10, inc=pop)
             count += append
-            print count
         return count
 
-    def ratio_30(row):
+    def ratio_10(row):
         try:
-            # return float(row.within30) / int(pop_tract)
-            return float(row['docs_within30']) / float(row['tracts_within30'])
+            # return float(row.within10) / int(pop_tract)
+            return float(row['docs_within10']) / float(row['tracts_within10'])
         except ZeroDivisionError:
             return 0
 
-    def sum_ratio30(row):
-        return docs.loc[docs['tract_code'] == row.tract_code].ratio30.sum()
+    def sum_ratio10(row):
+        return docs.loc[docs['tract_code'] == row.tract_code].ratio10.sum()
 
     print 'starting do calc'
     tract_query = session.query(Tract).all()
@@ -101,25 +99,27 @@ def do_calc():
     docs_lat_long_list = docs['lat_long'].tolist()
     tracts_lat_long_pop_list = tracts['lat_long_pop'].tolist()
 
-    print 'all docs within 30'
-    docs['docs_within30'] = docs.apply(get_docs_within30, axis=1)
+    print 'all docs within 10'
+    docs['docs_within10'] = docs.apply(get_docs_within10, axis=1)
 
-    print 'all tracts within 30'
-    docs['tracts_within30'] = docs.apply(get_tracts_within30, axis=1)
+    print 'all tracts within 10'
+    docs['tracts_within10'] = docs.apply(get_tracts_within10, axis=1)
 
     print 'calc ratios'
-    docs['ratio30'] = docs.apply(ratio_30, axis=1)
+    docs['ratio10'] = docs.apply(ratio_10, axis=1)
 
     print 'calc sum or ratios'
-    tracts['sum_ratio'] = tracts.apply(sum_ratio30, axis=1)
+    tracts['sum_ratio'] = tracts.apply(sum_ratio10, axis=1)
     tracts.to_csv('tractstracts')
     docs.to_csv('docsdocsdocs')
 
     end_time = datetime.utcnow()
 
     total_seconds = (end_time - start_time).total_seconds()
-    print 'Complete...{0} seconds; {1} minutes'.format(total_seconds,
-                                                       total_seconds / 60)
+    print 'Complete...{0} minutes & {1} seconds'.format(
+        int(total_seconds / 60),
+        int(total_seconds) % 60
+    )
 
 
 def _three_digits(value):
@@ -229,7 +229,7 @@ if __name__ == '__main__':
     # get_physician_tract_codes()
     do_calc()
     # calc_countss()
-    # calc_ratio(30)
+    # calc_ratio(10)
     # calc_ratio(15)
     # calc_ratio(10)
     # calc_ratio(45)
