@@ -72,7 +72,6 @@ def do_calc():
 
     def ratio_15(row):
         try:
-            # return float(row.within15) / int(pop_tract)
             return float(row['docs_within15']) / float(row['tracts_within15'])
         except ZeroDivisionError:
             return 0

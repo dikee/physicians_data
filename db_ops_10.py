@@ -45,7 +45,7 @@ def haversine_threshold(lon1, lat1, lon2, lat2, threshold, inc):
 def do_calc():
     start_time = datetime.utcnow()
 
-    def get_docs_within15(row):
+    def get_docs_within10(row):
         base_lat, base_long = row['lat_long']
 
         count = -1
@@ -54,10 +54,10 @@ def do_calc():
             count += haversine_threshold(
                 base_long, base_lat,
                 long2, lat2,
-                threshold=15, inc=1)
+                threshold=10, inc=1)
         return count
 
-    def get_tracts_within15(row):
+    def get_tracts_within10(row):
         base_lat, base_long = row['lat_long']
 
         count = 0
@@ -66,19 +66,18 @@ def do_calc():
             append = haversine_threshold(
                 base_long, base_lat,
                 long2, lat2,
-                threshold=15, inc=pop)
+                threshold=10, inc=pop)
             count += append
         return count
 
-    def ratio_15(row):
+    def ratio_10(row):
         try:
-            # return float(row.within15) / int(pop_tract)
-            return float(row['docs_within15']) / float(row['tracts_within15'])
+            return float(row['docs_within10']) / float(row['tracts_within10'])
         except ZeroDivisionError:
             return 0
 
-    def sum_ratio15(row):
-        return docs.loc[docs['tract_code'] == row.tract_code].ratio15.sum()
+    def sum_ratio10(row):
+        return docs.loc[docs['tract_code'] == row.tract_code].ratio10.sum()
 
     print 'starting do calc'
     tract_query = session.query(Tract).all()
@@ -99,19 +98,19 @@ def do_calc():
     docs_lat_long_list = docs['lat_long'].tolist()
     tracts_lat_long_pop_list = tracts['lat_long_pop'].tolist()
 
-    print 'all docs within 15'
-    docs['docs_within15'] = docs.apply(get_docs_within15, axis=1)
+    print 'all docs within 10'
+    docs['docs_within10'] = docs.apply(get_docs_within10, axis=1)
 
-    print 'all tracts within 15'
-    docs['tracts_within15'] = docs.apply(get_tracts_within15, axis=1)
+    print 'all tracts within 10'
+    docs['tracts_within10'] = docs.apply(get_tracts_within10, axis=1)
 
     print 'calc ratios'
-    docs['ratio15'] = docs.apply(ratio_15, axis=1)
+    docs['ratio10'] = docs.apply(ratio_10, axis=1)
 
     print 'calc sum or ratios'
-    tracts['sum_ratio'] = tracts.apply(sum_ratio15, axis=1)
-    tracts.to_csv('tractstracts_15.csv')
-    docs.to_csv('docsdocsdocs_15.csv')
+    tracts['sum_ratio'] = tracts.apply(sum_ratio10, axis=1)
+    tracts.to_csv('tractstracts_10.csv')
+    docs.to_csv('docsdocsdocs_10.csv')
 
     end_time = datetime.utcnow()
 
@@ -219,7 +218,7 @@ def get_physician_tract_codes():
 
 if __name__ == '__main__':
     # delete_all()
-    # print haversine('-99.829416', '28.715983', '-95.53183', '31.99936')
+    # print haversine('-99.829416', '28.710983', '-95.53183', '31.99936')
     # unpack_centroids()
     # unpack_physicians()
     # populate_distance_table()
@@ -229,10 +228,10 @@ if __name__ == '__main__':
     # get_physician_tract_codes()
     do_calc()
     # calc_countss()
-    # calc_ratio(15)
-    # calc_ratio(15)
-    # calc_ratio(15)
-    # calc_ratio(15)
+    # calc_ratio(10)
+    # calc_ratio(10)
+    # calc_ratio(10)
+    # calc_ratio(10)
     # calc_ratio(60)
     # print session.query(Physicians).all()[0].docs_within
     # print session.query(Physicians).all()[0].tracts_within
